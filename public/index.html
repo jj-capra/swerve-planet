@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Swerve Planet">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="description" content="Swerve Planet: pick your planet. Weave folded freeways, break ankles on a court ten courts long, or truck your way through 300 yards of gridiron.">
 <meta name="theme-color" content="#140d24">
 <meta name="swerve-leaderboard" content="/api/scores">
@@ -29,10 +34,13 @@
 }
 [hidden]{display:none!important}
 html,body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(--paper);
-  font-family:var(--label);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;}
+  font-family:var(--label);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;
+  overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
 #stage{position:relative;width:100%;height:100%;overflow:hidden;background:var(--dusk);}
 #game{position:absolute;inset:0;width:100%;height:100%;display:block;}
-button{font:inherit;color:inherit;cursor:pointer}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
+#touch,.tz,#game{touch-action:none}
+.overlay{touch-action:pan-y;overscroll-behavior:contain}
 button:focus-visible{outline:3px solid var(--volt);outline-offset:3px}
 
 /* ---------- HUD ---------- */
@@ -2413,6 +2421,20 @@ for (const side of ['left', 'right']) {
   z.addEventListener('pointerup', up); z.addEventListener('pointercancel', up); z.addEventListener('lostpointercapture', up);
 }
 stage.addEventListener('contextmenu', (e) => e.preventDefault());
+// Two thumbs moving on the glass look like a pinch to a phone browser, and quick taps look like a double-tap, so the page
+// would zoom mid-run. Block every kind of page zoom: pinches anywhere, and all default touch behaviour on the play area.
+// Single-finger scrolling still works inside the menus and the leaderboard list.
+{
+  const noZoom = (e) => e.preventDefault();
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, noZoom, { passive: false });   // iOS Safari pinch
+  document.addEventListener('dblclick', noZoom, { passive: false });
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 || touchEl.contains(e.target) || e.target === canvas) e.preventDefault(); }, { passive: false });
+  document.addEventListener('touchstart', (e) => { if (e.touches.length > 1 && !e.target.closest('input')) e.preventDefault(); }, { passive: false });
+  // on the play area itself, nothing the browser would do with a touch is wanted (zoom, scroll, callouts, selection);
+  // pointer events, which the controls use, still arrive
+  touchEl.addEventListener('touchstart', noZoom, { passive: false });
+  touchEl.addEventListener('touchend', noZoom, { passive: false });
+}
 function updateTouchUi(dt) {
   if (ctl.brakeT > 0) ctl.brakeT -= dt;
   if (ctl.act) ringEl.classList.toggle('turbo', performance.now() - ctl.act.down > 150);
