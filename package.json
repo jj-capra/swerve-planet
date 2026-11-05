@@ -1,0 +1,16 @@
+{
+  "name": "swerve-planet",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Swerve Planet: a comic flip-book arcade game with daily, weekly and all-time leaderboards on Netlify.",
+  "dependencies": {
+    "@netlify/blobs": "^11.1.7"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node tests/scores.test.mjs"
+  }
+}
