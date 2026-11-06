@@ -185,6 +185,27 @@ body.touch .hud-bc .cap{display:none}
   10%{opacity:1;transform:translate(-50%,-50%) rotate(-4deg) scale(.92)}18%{transform:translate(-50%,-50%) rotate(-3deg) scale(1.03)}
   82%{opacity:1;transform:translate(-50%,-52%) rotate(-3deg) scale(1)}100%{opacity:0;transform:translate(-50%,-70%) rotate(-2deg) scale(.96)}}
 
+/* ---------- the army splash before each drive ---------- */
+.armypanel{position:absolute;left:50%;top:clamp(120px,24%,210px);transform:translate(-50%,-50%) rotate(-3deg);pointer-events:none;text-align:center;
+  padding:12px 34px 14px;color:var(--paper);background:
+  radial-gradient(circle at 3px 3px, rgba(255,42,79,.35) 1.6px, transparent 1.9px) 0 0/7px 7px, var(--ink);
+  border:5px solid var(--paper);box-shadow:9px 9px 0 var(--hero),-4px -4px 0 var(--volt);opacity:0}
+.armypanel.in{animation:armyin .5s cubic-bezier(.2,1.6,.4,1) forwards}
+.armypanel.out{animation:armyout .35s ease-in forwards}
+@keyframes armyin{0%{opacity:0;transform:translate(-50%,-50%) rotate(-3deg) scale(2.6)}60%{opacity:1;transform:translate(-50%,-50%) rotate(-3deg) scale(.94)}100%{opacity:1;transform:translate(-50%,-50%) rotate(-3deg) scale(1)}}
+@keyframes armyout{to{opacity:0;transform:translate(-50%,-80%) rotate(-3deg) scale(.9)}}
+#armyDrive{display:block;font:700 12px/1 var(--label);letter-spacing:.3em;color:var(--volt)}
+#armyCount{display:block;white-space:nowrap;font:400 clamp(52px,11vw,124px)/.9 var(--display);letter-spacing:.03em;color:var(--zing);margin:6px 0 4px;
+  -webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:-5px 0 0 var(--hero),6px 6px 0 #000}
+.armypanel.k3 #armyCount{color:var(--paper);text-shadow:-5px 0 0 var(--hero),6px 6px 0 #000,0 0 22px rgba(255,42,79,.6)}
+.armypanel.k5{box-shadow:9px 9px 0 var(--hero),-4px -4px 0 var(--volt),0 0 0 9px rgba(255,42,79,.35);animation:none}
+.armypanel.k5.in{animation:armyin .5s cubic-bezier(.2,1.6,.4,1) forwards, quake .09s linear .5s 8}
+@keyframes quake{0%,100%{margin-left:0}25%{margin-left:-4px}75%{margin-left:4px}}
+#armyLine{display:block;white-space:nowrap;font:400 clamp(17px,2.6vw,26px)/1 var(--display);letter-spacing:.06em;color:var(--paper)}
+@media (max-height:500px){ .armypanel{top:104px;padding:8px 20px 10px} #armyCount{font-size:clamp(40px,8vw,70px)} }
+.armypanel{max-width:calc(100vw - 40px);box-sizing:border-box}
+#armyLine{white-space:normal;text-wrap:balance}
+
 /* ---------- cinema: bars, narration, sound effects, instant replay ---------- */
 #bars{position:absolute;inset:0;pointer-events:none;--b:0}
 #bars::before,#bars::after{content:"";position:absolute;left:0;right:0;height:11vh;background:var(--ink)}
@@ -407,6 +428,7 @@ body:not(.touch) .lefty{display:none}
   <div id="pops" aria-hidden="true"></div>
   <div id="narr" class="narr" hidden aria-live="polite"></div>
   <div id="replayTag" class="replaytag" hidden><i></i><span>INSTANT REPLAY</span><small>tap to skip</small></div>
+  <div id="armyPanel" class="armypanel" hidden aria-live="polite"><span id="armyDrive">DRIVE 1</span><span id="armyCount">1 ON 28</span><span id="armyLine"></span></div>
   <div id="finPanel" class="finpanel" hidden aria-live="polite"><span id="finSfx"></span><span id="finName"></span><span id="finPts"></span></div>
 
   <div id="touch" hidden>
@@ -1738,6 +1760,7 @@ const Sound = {
     };
     this.wind = loop('bandpass', 700, 0.7);
     this.rain = loop('highpass', 2600, 0.4);
+    this.rumble = loop('lowpass', 130, 0.8);   // an army's feet
   },
   resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
   setMuted(m) { this.muted = m; store.set('muted', m); if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05); },
@@ -1751,12 +1774,37 @@ const Sound = {
     this.wind.f.frequency.setTargetAtTime(400 + speed * 14, t, 0.1);
     this.rain.g.gain.setTargetAtTime(on ? storm * 0.13 : 0, t, 0.3);
   },
-  bed(on, speed, boost) {
+  bed(on, speed, boost, bpm, charging, drumVol) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.engG.gain.setTargetAtTime(0, t, 0.15); this.rain.g.gain.setTargetAtTime(0, t, 0.3);
     this.wind.f.frequency.setTargetAtTime(760 + boost * 600 + speed * 8, t, 0.2);
     this.wind.g.gain.setTargetAtTime(on ? 0.03 + boost * 0.035 : 0, t, 0.3);
+    this.rumble.g.gain.setTargetAtTime(on ? Math.min(0.32, (charging || 0) * 0.014) : 0, t, 0.25);
+    // war drums: boom . boom-boom boom . boom . , faster every drive, and the crowd chanting DE-FENSE on the one
+    if (on && bpm) {
+      if (!this.nextBeat || this.nextBeat < t - 0.2) this.nextBeat = t + 0.05;
+      const step = 60 / bpm / 2, pat = [1, 0, 0.55, 0.75, 1, 0, 0.6, 0];
+      while (this.nextBeat < t + 0.12) {
+        const b = (this.beatI = (this.beatI || 0) + 1) % 8, dl = Math.max(0, this.nextBeat - t);
+        if (pat[b]) this.drum(dl, pat[b] * (drumVol || 0.5));
+        if (b === 0 && (drumVol || 0) > 0.45) this.chant(dl, drumVol);
+        this.nextBeat += step;
+      }
+    } else this.nextBeat = 0;
+  },
+  drum(delay, a) { this.tone(56, 0.24, 'sine', 0.26 * a, 0.42, delay); this.noise(0.07, 1100, 180, 0.07 * a, 'lowpass', delay); },
+  chant(delay, v) { this.noise(0.2, 480, 540, 0.05 * v, 'bandpass', delay, 4); this.noise(0.32, 700, 640, 0.06 * v, 'bandpass', delay + 0.28, 4); },
+  horn(v) {   // a war horn: three detuned saws swelling up into a chord
+    if (!this.ctx) return; const c = this.ctx, t = c.currentTime, vol = 0.07 * (v || 1);
+    for (const [f, d] of [[110, 0], [165, 0.03], [220.5, 0.06]]) {
+      const o = c.createOscillator(), gn = c.createGain(), fl = c.createBiquadFilter(), lfo = c.createOscillator(), lg = c.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(f * 0.8, t + d); o.frequency.exponentialRampToValueAtTime(f, t + d + 0.3);
+      lfo.frequency.value = 5.5; lg.gain.value = f * 0.012; lfo.connect(lg); lg.connect(o.frequency);
+      fl.type = 'lowpass'; fl.frequency.setValueAtTime(300, t); fl.frequency.linearRampToValueAtTime(1600, t + 0.45); fl.frequency.linearRampToValueAtTime(600, t + 1.5);
+      gn.gain.setValueAtTime(0.0001, t + d); gn.gain.exponentialRampToValueAtTime(vol, t + d + 0.28); gn.gain.setValueAtTime(vol, t + 1.05); gn.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+      o.connect(fl); fl.connect(gn); gn.connect(this.master); o.start(t + d); lfo.start(t + d); o.stop(t + 1.7); lfo.stop(t + 1.7);
+    }
   },
   tone(freq, dur, type, vol, slide, delay) {
     if (!this.ctx) return; const c = this.ctx, t = c.currentTime + (delay || 0);
@@ -2461,14 +2509,14 @@ const PLANETS = {
   },
   hoops: {
     name: 'Planet Hardwood', play: 'BALL OUT!', again: 'RUN IT BACK', bestKey: 'best_hoops', over: 'BENCHED!', issue: 'Ankle Breakers',
-    blurb: 'A court ten courts long with the defense waiting all the way down. Cross them up and break ankles, finish at the rim, then go back the other way.',
+    blurb: 'A court ten courts long, and every time you run it back the defense doubles, until it is you against an army. Break ankles, drop whole rows like dominoes, spin past the lockdown D, and finish at the rim.',
     goal: 'Points on the drive pick your finish: layup, dunk, tomahawk, windmill, 360. Clean drives stack a streak bonus.',
     stamp: 'More points, bigger dunks!', meter: 'Heat', meterOn: 'ON FIRE!', unit: 'MPH',
     moves: { hold: 'Sprint', side: 'Crossover', up: 'Spin', down: 'Hesi' },
   },
   football: {
     name: 'Planet Gridiron', play: 'HIKE!', again: 'NEXT DRIVE', bestKey: 'best_football', over: 'TURNOVER!', issue: 'The Maze',
-    blurb: 'Three hundred yards of defense: walls of linemen, linebackers closing in, safeties diving at your legs. Juke, hurdle, stiff-arm, score, then run it back.',
+    blurb: 'Three hundred yards of defense, and it doubles every drive until the whole planet is on the field. Juke, hurdle, truck whole rows like bowling pins, stiff-arm the brutes, and score.',
     goal: 'Points on the drive pick your celebration: dive, front flip, backflip, supernova. Clean drives stack a streak bonus.',
     stamp: 'Hurdle the divers!', meter: 'Beast', meterOn: 'BEAST MODE!', unit: 'MPH',
     moves: { hold: 'Sprint', side: 'Juke', up: 'Hurdle', down: 'Truck / stiff arm' },
@@ -2612,7 +2660,7 @@ function endRun() {
   else {
     const cfg = ARENA[mode];
     rows = [['Score', fmt(p.score)], [cfg.unit, fmt(A.finishes)], ['Best finish', A.bestTier >= 0 ? cfg.tiers[A.bestTier].replace('!', '') : '\u2014'],
-      [mode === 'hoops' ? 'Ankles broken' : 'Defenders beaten', fmt(p.near)], ['Best streak', fmt(A.bestStreak)], [mode === 'hoops' ? 'Lockdowns spun' : 'Brutes stiff-armed', fmt(A.eliteBeat || 0)]];
+      ['Defenders down', fmt(p.near)], ['Biggest army', '1 vs ' + fmt(A.biggest || 0)], [mode === 'hoops' ? 'Lockdowns spun' : 'Brutes stiff-armed', fmt(A.eliteBeat || 0)]];
   }
   $('#overStats').innerHTML = rows.map(([k, v]) => '<div class="stat"><span class="cap">' + k + '</span><b>' + v + '</b></div>').join('');
   $('#overTitle').textContent = pl.over;
@@ -4363,6 +4411,81 @@ function figPoint(f, key, out) {
   const xr = x * c - y * s, yr = x * s + y * c + f.pivot;
   return out.set(p.x + Math.cos(yaw) * xr * sc, p.y + yr * sc, p.z - Math.sin(yaw) * xr * sc);
 }
+// ---------------------------------------------------------------- the army: every regular defender is one instance of a single batched card
+// Same drawing, same flip-book frames as a single figure, but hundreds of them cost one draw call (plus one for their shadows).
+const CROWD_VS = `attribute vec3 iPos; attribute vec4 iRect; attribute vec4 iOff; attribute vec3 iRot;
+varying vec2 vUv; varying float vGlow;
+#include <fog_pars_vertex>
+void main(){
+  vUv = iRect.xy + uv * iRect.zw; vGlow = iRot.z;
+  vec2 p = position.xy;
+  p.x = (p.x + iOff.x) * iOff.z;
+  p.y = p.y + iOff.y - iRot.y;
+  float c = cos(iRot.x), s = sin(iRot.x);
+  p = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+  p.y += iRot.y;
+  p *= iOff.w;
+  vec2 d = cameraPosition.xz - iPos.xz; float yaw = atan(d.x, d.y);
+  vec3 wp = iPos + vec3(cos(yaw), 0.0, -sin(yaw)) * p.x + vec3(0.0, p.y, 0.0);
+  vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+#include <fog_vertex>
+}`;
+const CROWD_FS = `uniform sampler2D map; varying vec2 vUv; varying float vGlow;
+#include <fog_pars_fragment>
+void main(){ vec4 c = texture2D(map, vUv); if (c.a < 0.42) discard; gl_FragColor = vec4(mix(c.rgb, vec3(1.0, 0.965, 0.878), vGlow), 1.0);
+#include <fog_fragment>
+}`;
+const SHAD_VS = `attribute vec4 iSh;
+#include <fog_pars_vertex>
+void main(){ vec3 wp = vec3(iSh.x + position.x * 0.62 * iSh.w, iSh.y + 0.03, iSh.z + position.z * 0.45 * iSh.w);
+  vec4 mvPosition = viewMatrix * vec4(wp, 1.0); gl_Position = projectionMatrix * mvPosition;
+#include <fog_vertex>
+}`;
+const SHAD_FS = `
+#include <fog_pars_fragment>
+void main(){ gl_FragColor = vec4(0.078, 0.051, 0.141, 0.28);
+#include <fog_fragment>
+}`;
+// precompute, for every frame on a sheet, its UV rectangle and where the drawing's feet sit
+function prepSheet(sh) {
+  const H = sh.sizeH || sh.size;
+  for (const k in sh.map) {
+    const e = sh.map[k], col = e.i % sh.cols, row = Math.floor(e.i / sh.cols);
+    e.rect = [(col * sh.cw) / sh.size, 1 - ((row + 1) * sh.ch) / H, sh.cw / sh.size, sh.ch / H];
+    e.bx = -(e.ox - sh.cw / 2) / sh.ppm; e.by = -(sh.ch - e.oy) / sh.ppm;
+  }
+}
+function makeCrowd(sheet, tex, max) {
+  const base = figGeo(sheet), g = new THREE.InstancedBufferGeometry();
+  g.index = base.index; g.setAttribute('position', base.attributes.position); g.setAttribute('uv', base.attributes.uv);
+  const mk = (geo, name, n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(max * n), n); a.setUsage(THREE.DynamicDrawUsage); geo.setAttribute(name, a); return a; };
+  const P = mk(g, 'iPos', 3), Rc = mk(g, 'iRect', 4), O = mk(g, 'iOff', 4), Ro = mk(g, 'iRot', 3);
+  g.instanceCount = 0;
+  const mat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: null } }]), vertexShader: CROWD_VS, fragmentShader: CROWD_FS, fog: true, side: THREE.DoubleSide });
+  mat.uniforms.map.value = tex;
+  const mesh = new THREE.Mesh(g, mat); mesh.frustumCulled = false;
+  const sg = new THREE.InstancedBufferGeometry(); sg.index = shadowGeo.index; sg.setAttribute('position', shadowGeo.attributes.position);
+  const S = mk(sg, 'iSh', 4); sg.instanceCount = 0;
+  const smat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(THREE.UniformsLib.fog), vertexShader: SHAD_VS, fragmentShader: SHAD_FS, fog: true, transparent: true, depthWrite: false });
+  const shadow = new THREE.Mesh(sg, smat); shadow.frustumCulled = false;
+  return {
+    mesh, shadow, n: 0, max,
+    begin() { this.n = 0; },
+    push(x, y, z, e, flip, lean, pivot, glow, sc, gy) {
+      if (this.n >= max || !e) return;
+      const i = this.n++, p = P.array, o = O.array, r = Ro.array, sh = S.array;
+      p[i * 3] = x; p[i * 3 + 1] = y; p[i * 3 + 2] = z;
+      Rc.array.set(e.rect, i * 4);
+      o[i * 4] = e.bx; o[i * 4 + 1] = e.by; o[i * 4 + 2] = flip; o[i * 4 + 3] = sc;
+      r[i * 3] = lean; r[i * 3 + 1] = pivot; r[i * 3 + 2] = glow;
+      sh[i * 4] = x; sh[i * 4 + 1] = gy; sh[i * 4 + 2] = z; sh[i * 4 + 3] = sc * (1 - Math.min(0.5, (y - gy) * 0.25));
+    },
+    end() { g.instanceCount = sg.instanceCount = this.n; for (const a of [P, Rc, O, Ro, S]) { a.updateRange.offset = 0; a.updateRange.count = Math.max(1, this.n) * a.itemSize; a.needsUpdate = true; } },
+  };
+}
+const FRN = { stance: ['stance0', 'stance1', 'stance2', 'stance3'], runF: ['runF0', 'runF1', 'runF2', 'runF3'], runS: ['runS0', 'runS1', 'runS2', 'runS3'], three: ['three0', 'three1'] };
+
 // drawn props: the ball, spinning stars, dust puffs and a crackle of lightning for the hot streak
 const ballCardTex = canvasTex(64, 64, (g) => {
   g.beginPath(); g.arc(32, 32, 27, 0, TAU); g.fillStyle = '#ff8a1f'; g.fill();
@@ -4558,16 +4681,18 @@ function buildArena(sport) {
   w.own.push(...w.auraTex);
   w.aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: w.auraTex[0], transparent: true, depthWrite: false })); w.aura.scale.set(2.5, 3.5, 1); w.aura.visible = false; sc.add(w.aura);
   w.puffs = [];
-  for (let i = 0; i < 14; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, transparent: true, depthWrite: false })); sp.visible = false; sc.add(sp); w.puffs.push({ s: sp, life: 0, size: 1 }); }
+  for (let i = 0; i < 40; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, transparent: true, depthWrite: false })); sp.visible = false; sc.add(sp); w.puffs.push({ s: sp, life: 0, size: 1 }); }
   if (sport === 'hoops') { w.ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: ballCardTex })); w.ball.scale.set(0.36, 0.36, 1); sc.add(w.ball); }
   else { w.fball = new THREE.Sprite(new THREE.SpriteMaterial({ map: fballCardTex })); w.fball.scale.set(0.5, 0.34, 1); w.fball.visible = false; sc.add(w.fball); }
-  w.pool = [];
-  for (let i = 0; i < 44; i++) { const a = makeFig(cast.def, w.defTex, i % cast.def.vars, R(0.94, 1.06)); a.root.visible = false; sc.add(a.root); w.pool.push(a); }
+  w.cast = cast; prepSheet(cast.def);
+  w.defFrames = [];
+  for (let v = 0; v < cast.def.vars; v++) { const m = {}; for (const k in cast.def.map) { const [nm, vv] = k.split('#'); if (+vv === v) m[nm] = cast.def.map[k]; } w.defFrames.push(m); }
+  w.crowd = makeCrowd(cast.def, w.defTex, 2600); sc.add(w.crowd.shadow, w.crowd.mesh);
   w.eliteTex = sheetTex(cast.elite); w.own.push(w.eliteTex);
   const badgeTex = badgeTexFn(sport); w.own.push(badgeTex);
   const badgeMat = new THREE.SpriteMaterial({ map: badgeTex, transparent: true, depthWrite: false });
   w.elitePool = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 16; i++) {
     const a = makeFig(cast.elite, w.eliteTex, 0, sport === 'football' ? 1.12 : 1.08);
     a.badge = new THREE.Sprite(badgeMat); a.badge.scale.set(1.4, 1.62, 1); a.badge.position.y = 3.25; a.badge.renderOrder = 4; a.root.add(a.badge);
     a.root.visible = false; sc.add(a.root); w.elitePool.push(a);
@@ -4590,7 +4715,7 @@ const CT = { hill: 92, hillR: 9, hillTop: 1.3, hillH: 2.3, dip: 188, dipR: 11, d
 const hillY = (wd) => { const dh = Math.abs(wd - CT.hill); return dh >= CT.hillR ? 0 : dh < CT.hillTop ? CT.hillH : CT.hillH * (1 + Math.cos(Math.PI * (dh - CT.hillTop) / (CT.hillR - CT.hillTop))) / 2; };
 const dipY = (wd) => { const dd = Math.abs(wd - CT.dip); return dd >= CT.dipR ? 0 : dd < CT.dipBot ? -CT.dipD : -CT.dipD * (1 + Math.cos(Math.PI * (dd - CT.dipBot) / (CT.dipR - CT.dipBot))) / 2; };
 function courtGroundW(wx, wd, deck) {
-  if (A.sport !== 'hoops') return 0;
+  if (A.sport !== 'hoops' || Math.abs(wx) > A.cfg.W / 2) return 0;
   if (Math.abs(wx) < CT.lane && Math.abs(wd - CT.dip) < CT.dipR && !(deck && Math.abs(wd - CT.dip) < CT.deck)) return dipY(wd);
   return hillY(wd);
 }
@@ -4693,9 +4818,9 @@ function driveYaw(vx, vd) { return (A.dir > 0 ? 0 : Math.PI) - Math.atan2(vx, vd
 // ---------------------------------------------------------------- start / layout
 function arenaStart(sport, attract, camp) {
   A.sport = sport; A.cfg = ARENA[sport]; A.W = ensureArena(sport);
-  for (const W of Object.values(A.worlds)) for (const a of W.pool.concat(W.elitePool)) { a.root.visible = false; a.inUse = false; }
+  for (const W of Object.values(A.worlds)) { for (const a of W.elitePool) { a.root.visible = false; a.inUse = false; } W.crowd.begin(); W.crowd.end(); }
   for (const k of A.picks) if (k.mesh && k.mesh.parent) k.mesh.parent.remove(k.mesh);
-  Object.assign(A, { eliteBeat: 0, eliteSeen: 0, dir: 1, d: 4, x: 0, vx: 0, v: 0, h: 0, vh: 0, gy: 0, dipK: 0, dashT: 0, spinT: 0, hesiT: 0, stiffT: 0, cool: 0, stunT: 0, invuln: 0,
+  Object.assign(A, { eliteBeat: 0, eliteSeen: 0, biggest: 0, armyBase: 0, introK: 0, dir: 1, d: 4, x: 0, vx: 0, v: 0, h: 0, vh: 0, gy: 0, dipK: 0, dashT: 0, spinT: 0, hesiT: 0, stiffT: 0, cool: 0, stunT: 0, invuln: 0,
     drive: 0, streak: 0, bestStreak: 0, drivePts: 0, phase: 'run', phaseT: 0, defs: [], picks: [], slots: [], camInit: false, finishes: 0, bestTier: -1, ballSide: 1, ballSideV: 1, carrySide: 1 });
   Object.assign(player, { s: 0, x: 0, vx: 0, v: 0, steer: 0, boost: 70, boosting: false, hearts: 3, invuln: 0,
     score: 0, dist: 0, chain: 0, mult: 1, comboT: 0, stars: 0, shards: 0, near: 0, top: 0, stealth: 0, stealthT: 0, mag: 60, magOn: false, br: null, air: false, h: 0 });
@@ -4705,27 +4830,39 @@ function arenaStart(sport, attract, camp) {
   startDrive();
 }
 const isElite = (role) => role === 'lock' || role === 'brute';
-function grabAthlete(elite) {
-  const pool = elite ? A.W.elitePool : A.W.pool;
+function grabAthlete() {
+  const pool = A.W.elitePool;
   for (let i = 0; i < pool.length; i++) { const a = pool[(A.poolI + i) % pool.length]; if (!a.root.visible && !a.inUse) { A.poolI = (A.poolI + i + 1) % pool.length; return a; } }
   return null;
 }
 // the drive's defense is laid out as slots up front; bodies are only put in a slot as it comes into view, and recycled once you're past
-function mkDef(role, x, d, sp) { A.slots.push({ role, x, d, sp }); }
+function mkDef(role, x, d, sp, extra) { const sl = { role, x, d, sp }; if (extra) Object.assign(sl, extra); A.slots.push(sl); return sl; }
+// elites are full figures with a badge; everyone else is a row in the crowd batch
 function newDef(a, sl) {
-  a.inUse = true; a.root.visible = false; a.root.position.y = 0;
-  const f = { a, role: sl.role, elite: isElite(sl.role), x: clamp(sl.x, -A.cfg.edge, A.cfg.edge), d: sl.d, homeX: sl.x, vx: 0, vd: 0, state: 'idle', t: 0, sp: sl.sp, lx: 0, ld: 0, closest: 99, passed: false, bit: false, fall: 0, side: 1, hurdled: false, ph: rand() * TAU, y: 0 };
+  if (a) { a.inUse = true; a.root.visible = false; a.root.position.y = 0; }
+  const onCourt = sl.role !== 'rank';
+  const f = { a, role: sl.role, elite: isElite(sl.role), x: onCourt ? clamp(sl.x, -A.cfg.edge, A.cfg.edge) : sl.x, d: sl.d, homeX: sl.x, vx: 0, vd: 0, state: 'idle', t: 0, sp: sl.sp,
+    lx: 0, ld: 0, closest: 99, passed: false, bit: false, fall: 0, side: 1, hurdled: false, ph: rand() * TAU, y: 0,
+    grp: sl.grp || null, wid: sl.wid, rank: sl.rank || 0, v: Math.floor(rand() * A.W.cast.def.vars), sc: R(0.94, 1.06), wp: new V3(), vis: false, e: null, flip: 1, lean: 0, pivot: 0, glow: 0 };
   A.defs.push(f); return f;
 }
-function spawnNow(role, x, d) { const a = grabAthlete(isElite(role)); return a ? newDef(a, { role, x, d, sp: 0.85 }) : null; }
+function freeDef(f) { if (f.a) { f.a.inUse = false; f.a.root.visible = false; } if (f.role === 'chase' && f.giveUp != null) A.chasers = Math.max(0, A.chasers - 1); }
+function spawnNow(role, x, d) {
+  let a = null;
+  if (isElite(role)) { a = grabAthlete(); if (!a) role = role === 'lock' ? 'guard' : 'chase'; }
+  return newDef(a, { role, x, d, sp: 0.85 });
+}
 function spawnSlots() {
-  while (A.slots.length && A.slots[0].d - A.d < 118) {
-    const sl = A.slots[0], a = grabAthlete(isElite(sl.role)); if (!a) break;
-    A.slots.shift(); newDef(a, sl);
+  let n = 0;
+  while (A.slots.length && A.slots[0].d - A.d < 118 && n++ < 1600) {
+    const sl = A.slots.shift();
+    let a = null;
+    if (isElite(sl.role)) { a = grabAthlete(); if (!a) sl.role = sl.role === 'lock' ? 'guard' : 'chase'; }
+    newDef(a, sl);
   }
   for (let i = A.defs.length - 1; i >= 0; i--) {
     const f = A.defs[i];
-    if (A.d - f.d > 24) { f.a.inUse = false; f.a.root.visible = false; A.defs.splice(i, 1); }
+    if (A.d - f.d > 24) { freeDef(f); A.defs.splice(i, 1); }
   }
 }
 const _arS = new V3(0.55, 0.55, 0.55), _zAx = new V3(0, 0, 1);
@@ -4736,9 +4873,9 @@ function addPick(type, x, d, h) {
 }
 function startDrive() {
   const cfg = A.cfg, L = cfg.L;
-  for (const f of A.defs) { f.a.inUse = false; f.a.root.visible = false; }
+  for (const f of A.defs) freeDef(f);
   for (const k of A.picks) if (k.mesh) A.W.scene.remove(k.mesh);
-  A.defs = []; A.picks = []; A.slots = [];
+  A.defs = []; A.picks = []; A.slots = []; A.waves = []; A.chasers = 0; A.driveDown = 0; A.charging = 0;
   A.drive++; A.drivePts = 0; A.phase = 'run'; A.phaseT = 0; A.slammed = false;
   if (A.camp) { if (game.camp) campSetup(); return; }   // camp lays out its own drills
   const k = A.drive, sp = 1 + Math.min(0.6, (k - 1) * 0.08), hoops = A.sport === 'hoops';
@@ -4787,32 +4924,86 @@ function startDrive() {
     // the hill: a crowd waiting just past the crest. Go up and over all of them.
     if (hillD > A.d + 25 && hillD < L - 30) {
       const n = 2 + Math.min(4, Math.floor(k / 2));
-      for (let i = 0; i < n; i++) mkDef('wall', i < 3 ? R(-3.5, 3.5) : R(-10, 10), hillD + R(4, 8.5), sp);
+      for (let i = 0; i < n; i++) mkDef('wall', i < 3 ? R(-3.5, 3.5) : R(-10, 10), hillD + R(4, 8.5), sp, { grp: 'hill' });
       const v = cfg.run, vh = 6 + v * 0.22;
       for (let i = 0; i < 7; i++) { const dd = hillD - 3 + i * 1.7, t = Math.max(0, dd - hillD) / v, y = CT.hillH + vh * t - 11 * t * t + 1.25; addPick('star', 0, dd, Math.max(1.3, y - courtGround(0, dd))); }
     }
     // the dip: a wall of defenders across the bridge. Duck under it down the middle, or fight through at the edges.
     if (dipD > A.d + 25 && dipD < L - 30) {
-      for (let x = -12; x <= 12.1; x += 3) mkDef('wall', x, dipD, sp);
+      for (let x = -12; x <= 12.1; x += 3) mkDef('wall', x, dipD, sp, { grp: 'dip' });
       for (let i = 0; i < 9; i++) addPick('star', 0, dipD - 8 + i * 2);
     }
     // and more of the world comes at you from the sidelines every drive
     const extra = Math.min(7, Math.floor((k - 1) * 1.3));
     for (let i = 0; i < extra; i++) { const dd = R(A.d + 40, L - 40); if (!busy(dd)) mkDef('chase', pick([-1, 1]) * 13, dd, sp); }
   }
-  A.driveCount = A.slots.length;
+  if (k === 1) A.armyBase = Math.max(20, A.slots.length);
+  else raiseArmy(k, sp, busy);
+  A.driveCount = A.slots.length; A.biggest = Math.max(A.biggest || 0, A.driveCount);
   A.slots.sort((a, b) => a.d - b.d);
   spawnSlots();
-  if (game.state === 'play') {
-    pop('1 ON ' + A.driveCount + '!' + (A.streak > 1 ? ' · STREAK x' + streakMult().toFixed(1).replace('.0', '') : ''), 'warn');
-    if (A.sport === 'football') Sound.whistle();
+  A.phase = 'intro'; A.phaseT = 0; A.introLen = k === 1 ? 1.6 : 2.1;
+  if (game.state === 'play') { showArmy(k, A.driveCount); Sound.horn(k === 1 ? 0.6 : 1); }
+}
+// From the second drive on, the defense doubles every time: charging waves with sliding gaps, a two-row last stand in front of the
+// rim or the end zone, and the rest of the army packed along both sidelines, where the front ranks pour onto the floor after you.
+function raiseArmy(k, sp, busy) {
+  const cfg = A.cfg, L = cfg.L, hoops = A.sport === 'hoops', half = cfg.W / 2;
+  const target = Math.min(2000, Math.round(A.armyBase * Math.pow(2, k - 1)));
+  const lastD = L - cfg.finishAt - 16;
+  const engager = (sl) => !sl.grp && !isElite(sl.role) && ['guard', 'zone', 'trap', 'chase', 'line', 'safety'].includes(sl.role);
+  // charging waves
+  const nW = Math.min(6, k - 1), gapW = k < 4 ? 2 : 1;
+  for (let i = 0; i < nW; i++) {
+    let wd = lerp(A.d + 62, lastD - 36, nW === 1 ? 0.5 : i / (nW - 1)) + R(-5, 5);
+    for (let t = 0; t < 12 && busy(wd); t++) wd += 7;
+    if (busy(wd) || wd > lastD - 25) continue;
+    A.slots = A.slots.filter((sl) => !(engager(sl) && Math.abs(sl.d - wd) < 6));
+    const id = A.waves.length, step = hoops ? 2.15 : 2.3, n = Math.floor((2 * (half - 0.8)) / step) + 1;
+    A.waves.push({ go: false, ph: rand() * TAU, amp: 1.6 + 0.35 * k, ws: 0.7 + 0.1 * k, spd: Math.min(9, (hoops ? 6.2 : 7) + 0.4 * k), trigger: 46 });
+    const gap = 1 + Math.floor(rand() * (n - 1 - gapW));
+    const captain = k >= 3 && rand() < 0.6 ? Math.floor(n / 2) : -1;
+    for (let j = 0; j < n; j++) {
+      if (j >= gap && j < gap + gapW) continue;
+      const x = -(half - 0.8) + j * step;
+      if (j === captain) mkDef(hoops ? 'lock' : 'brute', x, wd - 1.5, sp);
+      else mkDef('wave', x, wd + R(-0.35, 0.35), sp, { grp: 'w' + id, wid: id });
+    }
   }
+  // the last stand
+  A.slots = A.slots.filter((sl) => !(engager(sl) && sl.d > lastD - 10));
+  for (let row = 0; row < 2; row++) {
+    const step = 2.35, n = Math.floor((2 * (half - 1)) / step) + 1, gap = Math.floor(rand() * n);
+    for (let j = 0; j < n; j++) {
+      if (j === gap) continue;
+      const x = -(half - 1) + j * step + (row ? step / 2 : 0);
+      if (Math.abs(x) > cfg.edge) continue;
+      if (row === 0 && j === Math.floor(n / 2)) mkDef(hoops ? 'lock' : 'brute', x, lastD - 2, sp);
+      else mkDef('wall', x, lastD + row * 3.2, sp, { grp: 'last' });
+    }
+  }
+  // trim the scattered engagers if the formations already make the number, otherwise fill the sidelines
+  let canTrim = Math.floor(A.slots.filter(engager).length * 0.4);   // never strip the floor bare: keep most of the scattered defenders
+  while (A.slots.length > target && canTrim-- > 0) { const i = A.slots.findIndex(engager); if (i < 0) break; A.slots.splice(i, 1); }
+  const need = target - A.slots.length;
+  if (need > 0) {
+    const d0 = A.d + 16, len = L - 20 - d0, perSide = Math.ceil(need / 2);
+    const ranks = clamp(Math.ceil((perSide * 1.4) / len), 1, 4), per = Math.ceil(perSide / ranks), gapD = len / per;
+    let made = 0;
+    for (const side of [-1, 1]) for (let r = 0; r < ranks; r++) for (let j = 0; j < per && made < need; j++, made++) {
+      mkDef('rank', side * (half + 1.25 + r * 1.5) + R(-0.2, 0.2), d0 + (j + (r % 2) * 0.5) * gapD + R(-0.25, 0.25), Math.min(sp, 1.15), { grp: 'side' + side, rank: r });
+    }
+  }
+  A.peelP = Math.min(0.75, 0.25 + 0.1 * k); A.chaseCap = 3 + k;
 }
 const BITE_D = 5.0, BITE_X = 2.9;
+// the bigger the army, the more it takes to earn the big finish
+const tierAt = (i) => Math.round(A.cfg.tierAt[i] * (1 + 0.5 * Math.max(0, A.drive - 1)) / 50) * 50;
 const streakMult = () => Math.min(2, 1 + 0.25 * Math.max(0, A.streak - 1));   // only the finish is multiplied by the streak
 
 // ---------------------------------------------------------------- moves
 function arenaAction(a) {
+  if (A.phase === 'intro') { if (A.phaseT > 0.4) endIntro(); return; }   // any move skips the standoff
   if (A.phase !== 'run' || A.stunT > 0 || A.cool > 0) return;
   const cfg = A.cfg, playing = game.state === 'play';
   if (a === 'L' || a === 'R') {
@@ -4894,8 +5085,33 @@ const FIN_LINES = {
   football: [['SIX POINTS. EASY MONEY.', 'SPIKED IT INTO THE DIRT!'], ['SUPERMAN DIVE!', 'FULL EXTENSION, BABY!'], ['FRONT FLIP! STUCK THE LANDING!', 'FLIPPED INTO THE END ZONE!'],
     ['BACKFLIP! THE STANDS ARE SHAKING!', 'HE DID THAT BACKWARDS!'], ['SUPERNOVA! STARS FALLING FROM THE SKY!', 'THAT WAS ILLEGAL IN FOUR GALAXIES.']],
 };
+// knock one man in a formation over and his neighbours go with him, one after another
+function dominoFrom(root, kind) {
+  const q = [[root, 0]], seen = new Set([root]); let n = 0;
+  while (q.length && n < 16) {
+    const [g, depth] = q.shift();
+    for (const o of A.defs) {
+      if (seen.has(o) || o.grp !== root.grp || o.elite || o.state === 'down' || o.state === 'flying' || o.domT != null) continue;
+      if (Math.abs(o.x - g.x) < 2.7 && Math.abs(o.d - g.d) < 3.7) {
+        seen.add(o); n++;
+        o.domT = (depth + 1) * (kind === 'truck' ? 0.06 : 0.1); o.domSide = Math.sign(o.x - root.x) || pick([-1, 1]); o.domKind = kind;
+        q.push([o, depth + 1]); if (n >= 16) break;
+      }
+    }
+  }
+  return n;
+}
 function knockDown(f, kind, flySide) {
   if (f.state === 'down' || f.state === 'flying') return;
+  if (kind === 'domino') {   // a quiet fall: the chain's caption has already been called
+    f.side = flySide || 1; f.fall = 0; f.t = 4; f.flashT = 0.08;
+    if (f.domKind === 'truck' || f.domKind === 'fire') { f.state = 'flying'; f.y = 0.05; f.vy = R(4, 6.5); f.rot = 0; f.fvx = f.side * R(2.5, 5); f.fvd = A.v * 0.5 + 1; f.spin = f.side * R(5, 9); }
+    else f.state = 'down';
+    A.driveDown++; if (game.state === 'play') { player.near++; award(6, null, null, 1); }
+    if (rand() < 0.5) puff(f.x, f.d, 1); Sound.thump(0.1);
+    return;
+  }
+  A.driveDown++;
   const cfg = A.cfg, close = f.closest < 99 ? f.closest : Math.hypot(f.x - A.x, f.d - A.d);
   f.side = flySide || Math.sign(f.x - A.x) || 1; f.flashT = 0.12; f.fall = 0; f.t = 4;
   if (kind === 'truck' || kind === 'stiff') {      // a hit: he leaves his feet
@@ -4905,6 +5121,7 @@ function knockDown(f, kind, flySide) {
   } else f.state = 'down';
   puff(f.x, f.d, 1.3);
   campEvent('down', kind);
+  const dn = f.grp ? dominoFrom(f, kind) : 0;   // his row goes with him (in the title demo too)
   const where = toWorld(f.x, f.d, 1.8, _aw2);
   if (game.state !== 'play') return;
   let base = kind === 'fire' ? 15 : f.elite ? 120 : kind === 'truck' ? 45 : 30;
@@ -4915,15 +5132,22 @@ function knockDown(f, kind, flySide) {
   Sound.near(); Sound.crowd(0.22); if (kind !== 'truck' && kind !== 'stiff') Sound.squeak();
   game.flash = Math.max(game.flash, 0.15); game.hitstop = Math.max(game.hitstop, 0.05);
   burst(where, '#ffd51f', 12, 7, 0.5);
-  if (kind === 'fire') { pop(pick(cfg.fireHit) + ' +' + fmt(got), 'miss', where); return; }
-  const C = f.elite && kind !== 'fire' ? CAPS[f.role] : CAPS[kind === 'breaker' ? (A.sport === 'hoops' ? 'breaker' : 'juke') : kind] || CAPS.breaker;
-  if (cine.cool <= 0 && kind !== 'leap' && (close < 1.2 || !A.slowDrive)) {
+  const tot = dn + 1;
+  let C;
+  if (dn >= 2) {
+    C = kind === 'truck' ? { sfx: ['STRIKE!', 'BOWLING!'], lines: ['KNOCKED DOWN ' + tot + ' LIKE BOWLING PINS!', 'STEE-RIKE! ALL ' + tot + ' OF THEM!'] }
+      : kind === 'fire' ? { sfx: ['PLOWED!', 'BULLDOZER!'], lines: ['PLOWED THROUGH ' + tot + ' OF THEM!', 'NOBODY CAN STOP THIS! ' + tot + ' DOWN!'] }
+      : { sfx: ['DOMINOES!', 'TIMBER!'], lines: ['THE WHOLE ROW WENT DOWN! ×' + tot, tot + ' DEFENDERS, ONE MOVE!', 'DOMINOES! ' + tot + ' ON THE FLOOR!'] };
+    Sound.crowd(0.45); game.shake = Math.max(game.shake, 0.5);
+  } else if (kind === 'fire') { pop(pick(cfg.fireHit) + ' +' + fmt(got), 'miss', where); return; }
+  else C = f.elite ? CAPS[f.role] : CAPS[kind === 'breaker' ? (A.sport === 'hoops' ? 'breaker' : 'juke') : kind] || CAPS.breaker;
+  if (cine.cool <= 0 && kind !== 'leap' && kind !== 'fire' && (close < 1.2 || !A.slowDrive)) {
     // now and then (the first big move of a drive, or a really filthy one) time drops, the camera pushes in, then eases back
     slowmo(0.95, 0.35, 0.3); cine.cool = 8; A.slowDrive = true; cine.focusF = f; cine.side = -f.side;
     Sound.crowd(0.4);
   }
   caption(pick(C.sfx), pick(C.lines), where);   // the words land every time
-  pop((close < 1.3 ? 'FILTHY! ' : '') + '+' + fmt(got), 'small', toWorld(f.x, f.d, 0.6, _aw));
+  if (dn < 2) pop((close < 1.3 ? 'FILTHY! ' : '') + '+' + fmt(got), 'small', toWorld(f.x, f.d, 0.6, _aw));
 }
 function loseBall(f, label) {
   const cfg = A.cfg, p = player;
@@ -4954,11 +5178,13 @@ function arenaContactOK() { return A.phase === 'run' && A.invuln <= 0; }
 function updateDefenders(dt) {
   const cfg = A.cfg, hoops = A.sport === 'hoops', playing = game.state === 'play';
   spawnSlots();
+  A.charging = 0;
   for (const f of A.defs) {
     const ahead = f.d - A.d, dx = A.x - f.x, dist = Math.hypot(dx, A.d - f.d);
     const near = ahead > -18 && ahead < 110;
-    f.a.root.visible = near;
+    f.vis = near; if (f.a) f.a.root.visible = near;
     if (!near) continue;
+    if (f.domT != null && f.state !== 'down' && f.state !== 'flying') { f.domT -= dt; if (f.domT <= 0) { f.domT = null; knockDown(f, 'domino', f.domSide); continue; } }
     f.ph += dt * 9;
     f.gy = hoops ? courtGround(f.x, f.d, true) : 0;
     const reach = canReach(f);
@@ -5022,7 +5248,26 @@ function updateDefenders(dt) {
       }
       if (!f.seen && ahead < 42 && game.state === 'play' && A.phase === 'run') {
         f.seen = true; A.eliteSeen++;
-        if (A.eliteSeen <= 2 || (A.drive <= 2 && !A.driveHint)) { A.driveHint = true; pop(lk ? 'LOCKDOWN D! SPIN PAST HIM' : 'BRUTE! STIFF-ARM HIM', 'warn'); }
+        if (!A.driveHint && (A.eliteSeen === 1 || A.drive <= 2)) { A.driveHint = true; pop(lk ? 'LOCKDOWN D! SPIN PAST HIM' : 'BRUTE! STIFF-ARM HIM', 'warn'); }
+      }
+    } else if (f.role === 'wave') {
+      // a charging wave: the whole row stampedes at you, sliding side to side so its gap moves
+      const w = A.waves[f.wid];
+      if (w && !w.go && ahead < w.trigger && A.phase === 'run') { w.go = true; if (game.state === 'play') { pop(pick(['CHARGE!', 'HERE THEY COME!', 'STAMPEDE!', 'INCOMING!']), 'warn'); Sound.horn(0.45); } }
+      if (w && w.go && ahead > -4) {
+        active = true;
+        const tx = clamp(f.homeX + Math.sin(A.time * w.ws + w.ph) * w.amp, -cfg.edge, cfg.edge);
+        f.vx = clamp((tx - f.x) * 3, -5, 5);
+        f.vd = ahead > 1.5 ? -w.spd : 0;
+        if (ahead > 0 && ahead < 30) A.charging++;
+        if (rand() < dt * 1.2) puff(f.x, f.d, 0.7);
+        if (ahead < 2.4 && ahead > -0.2 && Math.abs(dx) < 1.9 && reach) lungeAt(f);
+      }
+    } else if (f.role === 'rank' || f.role === 'spent') {
+      // the army on the sideline bounces and hollers until you go by, then its front ranks pour onto the floor after you
+      if (f.role === 'rank' && !f.peeled && ahead < 9 && ahead > -3 && f.rank <= 1 && A.phase === 'run') {
+        f.peeled = true;
+        if (rand() < A.peelP && A.chasers < A.chaseCap) { f.role = 'chase'; f.giveUp = 3.2; f.sp = Math.min(f.sp, 1.15); A.chasers++; }
       }
     } else if (f.role === 'trap') {
       if (ahead < 17 && ahead > -2) {
@@ -5040,9 +5285,12 @@ function updateDefenders(dt) {
       }
     } else {
       const range = f.role === 'safety' ? 48 : 34;
-      if (ahead < range && ahead > -6) {
+      if (f.giveUp != null) { f.giveUp -= dt; if (f.giveUp <= 0 || ahead < -9) { f.role = 'spent'; f.giveUp = null; A.chasers = Math.max(0, A.chasers - 1); } }
+      if (f.role === 'chase' || f.role === 'safety') if (ahead < range && ahead > (f.giveUp != null ? -14 : -6)) {
         active = true;
-        const tl = clamp(dist / 14, 0.15, 1.1), tx = A.x + A.vx * tl - f.x, td = A.d + A.v * tl - f.d, n = Math.hypot(tx, td) || 1;
+        // pursuers that came off the sideline run at your shoulder, on their side, instead of queueing behind you
+        const flank = f.giveUp != null && ahead < 1 ? (f.homeX > 0 ? 1.7 : -1.7) : 0;
+        const tl = clamp(dist / 14, 0.15, 1.1), tx = A.x + flank + A.vx * tl - f.x, td = A.d + A.v * tl - f.d, n = Math.hypot(tx, td) || 1;
         const spd = (f.role === 'safety' ? 10.2 : hoops ? 9 : 8.4) * sp;
         f.vx = (tx / n) * spd; f.vd = (td / n) * spd;
         if (dist < (f.role === 'safety' ? 3.6 : 3.1) && reach) lungeAt(f);
@@ -5050,9 +5298,9 @@ function updateDefenders(dt) {
     }
     f.state = active ? 'active' : 'idle';
     if (!active) { f.vx *= 0.9; f.vd *= 0.9; }
-    f.x = clamp(f.x + f.vx * dt, -cfg.edge, cfg.edge); f.d += f.vd * dt;
+    f.x = f.role === 'rank' || f.role === 'spent' ? f.x + f.vx * dt : clamp(f.x + f.vx * dt, -cfg.edge, cfg.edge); f.d += f.vd * dt;
     f.closest = Math.min(f.closest, dist);
-    if (dist < (f.role === 'brute' ? 1.1 : 0.85) && A.phase === 'run' && reach && (f.elite || !(A.sport === 'football' && A.h > 0.45))) {
+    if (dist < (player.stealthT > 0 ? 1.5 : f.role === 'brute' ? 1.1 : 0.85) && A.phase === 'run' && reach && (f.elite || !(A.sport === 'football' && A.h > 0.45))) {
       if (player.stealthT > 0) knockDown(f, 'fire');
       else if (A.sport === 'hoops' && A.spinT > 0) knockDown(f, 'spin');
       else if (A.sport === 'football' && A.truckT > 0 && f.elite) { if (arenaContactOK()) loseBall(f, 'BOUNCED OFF!'); }
@@ -5145,7 +5393,7 @@ const pickFresh = (list, last) => { const c = list.filter((x) => x.id !== last);
 const windowOf = (list, t, lo) => list.filter((x) => x.min <= t && x.min >= Math.max(lo, t - 1));
 function beginFinish() {
   const cfg = A.cfg;
-  let t = 0; for (let i = 0; i < cfg.tiers.length; i++) if (A.drivePts >= cfg.tierAt[i]) t = i;
+  let t = 0; for (let i = 0; i < cfg.tiers.length; i++) if (A.drivePts >= tierAt(i)) t = i;
   A.tier = t; A.phase = 'finish'; A.phaseT = 0; A.slammed = false;
   A.from = { x: A.x, d: A.d }; A.replayed = false;
   A.spinT = 0; A.hesiT = 0; A.dashT = 0; A.truckT = 0; A.stiffT = 0;
@@ -5163,6 +5411,10 @@ function finishMoment() {
   A.slammed = true; A.slamTime = A.time;
   campEvent('finish');
   if (game.state === 'play' && A.sport === 'hoops') caption(null, pick(A.dunk.lines));
+  if (game.state === 'play' && A.drive >= 2 && A.driveDown >= Math.max(10, A.driveCount * 0.15)) {
+    const b = Math.min(600, 4 * A.driveDown); player.score += b;
+    setTimeout(() => { if (game.state === 'play') pop('ARMY ROUTED! ' + A.driveDown + ' DOWN +' + fmt(b), 'warn'); }, 700);
+  }
   A.streak++; A.bestStreak = Math.max(A.bestStreak, A.streak); A.finishes++; A.bestTier = Math.max(A.bestTier, t);
   const sm = streakMult(), pts = Math.round(cfg.tierVal[t] * sm);
   const where = A.sport === 'hoops' ? toWorld(0, cfg.L - 1.6, 3.2, _aw2) : toWorld(A.x, A.d, 2, _aw2);
@@ -5305,7 +5557,8 @@ function arenaPose(dt) {
   }
   const rf = A.runF || 0, bs = A.ballSide > 0 ? 'R' : 'L', cs = A.carrySide > 0 ? 'R' : 'L';
   let name, lean = clamp(-A.vx * 0.022, -0.22, 0.22), pivot = 0;
-  if (A.phase === 'finish') {
+  if (A.phase === 'intro') { name = A.phaseT > (A.introLen || 1.8) - 0.25 ? 'run' + (hoops ? bs : cs) + rf : Math.floor(A.phaseT * 5) % 2 ? 'thumpB' : 'thumpA'; lean = 0; }
+  else if (A.phase === 'finish') {
     const T = A.phaseT, t = A.tier; lean = 0;
     if (T < 0.35) name = 'run' + (hoops ? bs : cs) + rf;
     else if (hoops) {
@@ -5369,6 +5622,7 @@ function arenaPose(dt) {
       const k = clamp(1 - A.dashT / 0.2, 0, 1), from = figPoint(hero, A.vx > 0 ? 'tL' : 'tR', _bA), to = figPoint(hero, A.vx > 0 ? 'tR' : 'tL', _bB);
       ball.position.lerpVectors(from, to, Math.floor(k * 4) / 4); ball.position.y = 0.32 + 0.25 * Math.abs(Math.floor(k * 4) / 4 - 0.5);
     } else if (name.startsWith('spin') || name.startsWith('hesi') || name === 'stun' || name === 'layup') figPoint(hero, name === 'hesiL' ? 'tL' : 'tR', ball.position);
+    else if (name.startsWith('thump')) { figPoint(hero, name === 'thumpA' ? 'tL' : 'tR', ball.position); ball.position.y -= 0.15; }
     else {
       const q = Math.floor(A.dph / (Math.PI / 6)) * (Math.PI / 6), bounce = Math.abs(Math.cos(q));
       figPoint(hero, bs === 'R' ? 'tR' : 'tL', ball.position);
@@ -5409,32 +5663,46 @@ function arenaPose(dt) {
     const k = Math.floor((1 - p.life / 0.5) * 6) / 6;
     p.s.scale.set(p.size * (0.9 + 1.1 * k), p.size * 0.68 * (0.9 + 1.1 * k), 1); p.s.material.opacity = 1 - k * k;
   }
-  // the defense
+  // the defense: elites are their own figures; the rest of the army goes into one batch
+  const crowd = W.crowd, frames = W.defFrames, nst = hoops ? 4 : 2, chaseCam = view === 'chase' && A.phase !== 'finish' && !cine.replay;
+  crowd.begin();
   for (const f of A.defs) {
-    const a = f.a;
-    if (!a.root.visible) continue;
+    if (!f.vis) continue;
+    // anyone standing right between the camera and you is left out of the picture, so you can always see yourself
+    const behind = f.d - A.d;
+    if (chaseCam && behind < -0.4 && behind > -7.6 && Math.abs(f.x - A.x) < 1.25 && f.state !== 'flying') { if (f.a) f.a.root.visible = false; continue; }
     const k8 = Math.floor((A.time + f.ph) * 8), k10 = Math.floor((A.time + f.ph) * 10);
-    let nm, fl = 1, ln = 0;
-    let pv = 0;
+    let nm, fl = 1, ln = 0, pv = 0;
     if (f.state === 'flying') { nm = 'blown'; fl = f.side > 0 ? 1 : -1; ln = -Math.round(f.rot / 0.5) * 0.5; pv = 1.0; }
     else if (f.state === 'down') { nm = f.fall < 0.34 ? 'fall0' : f.fall < 0.67 ? 'fall1' : 'fall2'; fl = f.side > 0 ? 1 : -1; }
     else if (f.state === 'lunge') { nm = f.t > (hoops ? 0.36 : 0.44) * 0.55 ? 'lunge0' : 'lunge1'; fl = (f.lx || 0) >= 0 ? 1 : -1; }
-    else if (f.state === 'recover') nm = 'idle';
-    else if (f.role === 'line' && f.d - A.d > 9) nm = 'three' + (k8 % 2);
-    else if (f.state === 'active' && (f.role === 'chase' || f.role === 'safety' || f.role === 'trap')) {
-      if (Math.abs(f.vx) > Math.abs(f.vd) * 1.3) { nm = 'runS' + (k10 % 4); fl = f.vx >= 0 ? 1 : -1; } else nm = 'runF' + (k10 % 4);
-    } else { nm = 'stance' + ((f.state === 'active' ? k10 : k8) % (hoops ? 4 : 2)); ln = clamp((A.x - f.x) * 0.02, -0.08, 0.08); }
-    setFig(a, nm, fl, ln, pv);
-    if (a.badge) { a.badge.visible = f.state !== 'down' && f.state !== 'flying' && f.d - A.d < 70; const b = (1 + (k8 % 2) * 0.08) * (1 + clamp((f.d - A.d - 15) / 40, 0, 1) * 0.6); a.badge.scale.set(1.4 * b, 1.62 * b, 1); }
+    else if (f.state === 'recover' || f.role === 'spent') nm = 'idle';
+    else if (f.role === 'line' && f.d - A.d > 9) nm = FRN.three[k8 % 2];
+    else if (f.state === 'active' && (f.role === 'chase' || f.role === 'safety' || f.role === 'trap' || f.role === 'wave')) {
+      if (Math.abs(f.vx) > Math.abs(f.vd) * 1.3) { nm = FRN.runS[k10 % 4]; fl = f.vx >= 0 ? 1 : -1; } else nm = FRN.runF[k10 % 4];
+    } else if (f.role === 'rank') nm = FRN.stance[(k8 + (f.rank & 1) * 2) % nst];
+    else { nm = FRN.stance[(f.state === 'active' ? k10 : k8) % nst]; ln = clamp((A.x - f.x) * 0.02, -0.08, 0.08); }
     if (f.flashT > 0) f.flashT -= dt;
-    a.mat.uniforms.glow.value = f.flashT > 0 ? 0.65 : 0;
-    toWorld(f.x, f.d, (f.gy || 0) + (f.state === 'flying' ? f.y : f.state === 'lunge' && A.sport === 'football' ? 0.2 : 0), a.root.position);
+    const glow = f.flashT > 0 ? 0.65 : 0;
+    toWorld(f.x, f.d, (f.gy || 0) + (f.state === 'flying' ? f.y : f.state === 'lunge' && A.sport === 'football' ? 0.2 : 0), f.wp);
+    if (f.a) {
+      const a = f.a;
+      setFig(a, nm, fl, ln, pv);
+      if (a.badge) { a.badge.visible = f.state !== 'down' && f.state !== 'flying' && f.d - A.d < 70; const b = (1 + (k8 % 2) * 0.08) * (1 + clamp((f.d - A.d - 15) / 40, 0, 1) * 0.6); a.badge.scale.set(1.4 * b, 1.62 * b, 1); }
+      a.mat.uniforms.glow.value = glow;
+      a.root.position.copy(f.wp);
+    } else {
+      f.e = frames[f.v][nm] || f.e; f.flip = fl; f.lean = ln; f.pivot = pv; f.glow = glow;
+      const gy = toWorld(f.x, f.d, f.gy || 0, _aw).y;
+      crowd.push(f.wp.x, f.wp.y, f.wp.z, f.e, fl, ln, pv, glow, f.sc, gy);
+    }
   }
+  crowd.end();
 }
 function arenaFace() {
   const W = A.W;
   faceCam(W.hero);
-  for (const f of A.defs) if (f.a.root.visible) faceCam(f.a);
+  for (const f of A.defs) if (f.a && f.vis) faceCam(f.a);
 }
 const _cu = new V3(), _ct = new V3(), _cf = new V3(), _cg = new V3();
 function arenaCamera(dt) {
@@ -5454,10 +5722,18 @@ function arenaCamera(dt) {
     _cu.set(2.4 * cf, lerp(lerp(3.45 + A.h * 0.3, 1.45, dk), 2.9, cf), lerp(lerp(6.5 + A.camBoost, 4.4, dk), 7.2, cf)).applyAxisAngle(WUP, A.camYaw);
     camera.position.copy(A.camFocus).add(_cu);
     _ct.set(0, lerp(1.55, 2.4, cf), lerp(-10, -3, cf)).applyAxisAngle(WUP, A.camYaw).add(A.camFocus);
+    A.introK = damp(A.introK || 0, A.phase === 'intro' ? 1 : 0, A.phase === 'intro' ? 14 : 2.4, dt);
+    if (A.introK > 0.001) {
+      const push = A.phase === 'intro' ? clamp(A.phaseT / (A.introLen || 1.8), 0, 1) : 1;
+      _cg.set(1.5, 1.55, 5.2 - push * 1.1).applyAxisAngle(WUP, A.camYaw).add(A.camFocus);
+      camera.position.lerp(_cg, A.introK);
+      _cf.set(-0.6, 2.0, -46).applyAxisAngle(WUP, A.camYaw).add(A.camFocus);
+      _ct.lerp(_cf, A.introK);
+    }
     const F = cine.focus;
     if (F > 0.001) {
       const tg = _cf.copy(hero.root.position);
-      if (cine.focusF && cine.focusF.a.root.visible) tg.lerp(cine.focusF.a.root.position, 0.5);
+      if (cine.focusF && cine.focusF.vis) tg.lerp(cine.focusF.wp, 0.5);
       else if (A.phase === 'finish' && A.sport === 'hoops') tg.lerp(toWorld(0, A.cfg.L - 1.6, 0, _cg), 0.35);
       tg.y = Math.max(1.3, tg.y + 1.35);
       const gap = cine.focusF ? Math.min(4, Math.hypot(cine.focusF.x - A.x, cine.focusF.d - A.d)) : 0;
@@ -5482,7 +5758,7 @@ function arenaCamera(dt) {
   camera.near = view === 'chase' ? 0.3 : 0.15;
   const kick = (p.boosting ? 6 : 0) + clamp((A.v - 10) * 0.6, 0, 6);
   camState.fov = damp(camState.fov, camState.baseFov + kick, 4, dt);
-  camera.fov = camState.fov - cine.focus * 6; camera.updateProjectionMatrix();
+  camera.fov = camState.fov - cine.focus * 6 - (A.introK || 0) * 22; camera.updateProjectionMatrix();
   A.W.sky.position.copy(camera.position); A.W.deco.position.copy(camera.position);
   // a hoop the camera is standing behind would only block the view: it isn't drawn
   if (A.sport === 'hoops') { const cwd = -camera.position.z; A.W.ends[0].visible = cwd > 3.5; A.W.ends[1].visible = cwd < A.cfg.L - 3.5; }
@@ -5492,7 +5768,7 @@ function arenaSense(dt) {
   const W = A.W;
   let on = false;
   if (A.phase === 'run' && A.stunT <= 0) for (const f of A.defs) {
-    if (f.state !== 'idle' && f.state !== 'active' && f.state !== 'lunge') continue;
+    if ((f.state !== 'idle' && f.state !== 'active' && f.state !== 'lunge') || f.role === 'rank' || f.role === 'spent') continue;
     const ahead = f.d - A.d;
     if (f.elite ? ahead > 0 && ahead < (f.role === 'lock' ? 4.2 : 5.8) && Math.abs(f.x - A.x) < 2.6 : ahead > -0.3 && ahead < BITE_D && Math.abs(f.x - A.x) < BITE_X && canReach(f)) { on = true; break; }
   }
@@ -5508,7 +5784,12 @@ function arenaRecord() {
   const W = A.W, snap = { t: A.time, f: [], ball: null, aura: W.aura.visible ? (W.aura.material.map === W.auraTex[0] ? 0 : 1) : -1, yaw: A.camYaw };
   const add = (g) => snap.f.push([g, g.root.position.x, g.root.position.y, g.root.position.z, g.e, g.flip, g.lean, g.pivot, g.mat.uniforms.glow.value]);
   add(W.hero);
-  for (const f of A.defs) if (f.a.root.visible) add(f.a);
+  snap.c = [];
+  for (const f of A.defs) {
+    if (!f.vis) continue;
+    if (f.a) add(f.a);
+    else if (snap.c.length < 90 && Math.abs(f.d - A.d) < 34) snap.c.push([f.wp.x, f.wp.y, f.wp.z, f.e, f.flip, f.lean, f.pivot, f.glow, f.sc, toWorld(f.x, f.d, f.gy || 0, _aw).y]);
+  }
   if (W.ball) snap.ball = [W.ball.position.x, W.ball.position.y, W.ball.position.z, W.ball.material.rotation];
   REC.push(snap);
   while (REC.length && A.time - REC[0].t > 2.6) REC.shift();
@@ -5523,7 +5804,7 @@ function startReplay() {
 }
 function endReplay() {
   cine.replay = null; $('#replayTag').hidden = true; ui.hud.classList.remove('replaying');
-  for (const a of A.W.pool.concat(A.W.elitePool)) a.root.visible = false;
+  for (const a of A.W.elitePool) a.root.visible = false;
   game.flash = 0.4;
 }
 function replayUpdate(rdt) {
@@ -5532,10 +5813,11 @@ function replayUpdate(rdt) {
   if (R.skip || R.t >= R.t1 || game.state !== 'play') { endReplay(); return; }
   while (R.i < R.frames.length - 2 && R.frames[R.i + 1].t <= R.t) R.i++;
   const s = R.frames[R.i];
-  for (const a of W.pool.concat(W.elitePool)) a.root.visible = false;
+  for (const a of W.elitePool) a.root.visible = false;
   for (const [g, x, y, z, e, flip, lean, pivot, glow] of s.f) {
     g.root.visible = true; g.root.position.set(x, y, z); setFigE(g, e); g.flip = flip; g.lean = lean; g.pivot = pivot; g.mat.uniforms.glow.value = glow;
   }
+  W.crowd.begin(); for (const c of s.c || []) W.crowd.push(...c); W.crowd.end();
   if (s.ball && W.ball) { W.ball.position.set(s.ball[0], s.ball[1], s.ball[2]); W.ball.material.rotation = s.ball[3]; }
   W.aura.visible = s.aura >= 0; if (s.aura >= 0) W.aura.material.map = W.auraTex[s.aura];
   // a low, slow orbit around the hero, like the TV truck's slow-mo camera
@@ -5549,10 +5831,38 @@ function replayUpdate(rdt) {
   W.sky.position.copy(camera.position); W.deco.position.copy(camera.position);
   for (const [g] of s.f) faceCam(g);
 }
+// before each drive: a beat to look down the floor at what's waiting, chest pounding, war drums going
+function arenaIntro(dt) {
+  A.phaseT += dt; A.v = damp(A.v, 0, 6, dt); A.d += A.v * dt; A.vx = 0;
+  if (A.sport === 'hoops') A.gy = courtGround(A.x, A.d);
+  player.boost = Math.min(100, player.boost + 10 * dt);
+  if (A.phaseT >= (A.introLen || 1.8)) endIntro();
+}
+function endIntro() {
+  if (A.phase !== 'intro') return;
+  A.phase = 'run'; A.phaseT = 0; armyPanel.classList.add('out');
+  clearTimeout(armyTimer); armyTimer = setTimeout(() => { armyPanel.hidden = true; }, 380);
+  if (game.state === 'play') { pop(A.sport === 'hoops' ? 'GO!' : 'HIKE!', 'stunt'); Sound.whoosh(); if (A.sport === 'football') Sound.whistle(); }
+}
+const armyPanel = $('#armyPanel'), armyDrive = $('#armyDrive'), armyCount = $('#armyCount'), armyLine = $('#armyLine');
+let armyTimer = 0;
+const ARMY_LINES = {
+  hoops: ['ONE BALL. ONE PLAYER. NO HELP.', 'THEY DOUBLED IT.', 'THEY CALLED IN THE RESERVES.', 'THE WHOLE LEAGUE SHOWED UP.', 'EVERY DEFENDER ON THE PLANET.', 'AN ARMY. AND YOU.', 'THERE IS NO BENCH LEFT.'],
+  football: ['ELEVEN? TRY TWENTY-EIGHT.', 'THEY DOUBLED IT.', 'THEY CALLED IN THE RESERVES.', 'THE WHOLE CONFERENCE SHOWED UP.', 'EVERY DEFENDER ON THE PLANET.', 'AN ARMY. AND YOU.', 'THE STANDS ARE EMPTY. THEY ARE ALL ON THE FIELD.'],
+};
+function showArmy(k, n) {
+  armyDrive.textContent = 'DRIVE ' + k;
+  armyCount.textContent = '1 ON ' + fmt(n);
+  armyLine.textContent = ARMY_LINES[A.sport][Math.min(k, ARMY_LINES[A.sport].length) - 1];
+  armyPanel.className = 'armypanel ' + (k >= 5 ? 'k5' : k >= 3 ? 'k3' : 'k1');
+  armyPanel.hidden = false; void armyPanel.offsetWidth; armyPanel.classList.add('in');
+  clearTimeout(armyTimer);
+}
 function arenaUpdate(dt) {
   if (game.state === 'play') arenaRecord();
   A.time += dt;
   if (A.phase === 'run') arenaRun(dt, game.state === 'play');
+  else if (A.phase === 'intro') arenaIntro(dt);
   else arenaFinish(dt);
   updateDefenders(dt);
   updateArenaPicks(dt);
@@ -5563,7 +5873,9 @@ function arenaUpdate(dt) {
   arenaFace();
   skyMat.uniforms.time.value = game.time;
   giant.rotation.y += dt * 0.01;
-  Sound.bed(game.state === 'play' || game.state === 'dying', A.v, player.boosting ? 1 : 0);
+  const live = game.state === 'play' || game.state === 'dying';
+  Sound.bed(live, A.v, player.boosting ? 1 : 0, live && A.phase !== 'finish' ? Math.min(176, 86 + 15 * (A.drive - 1)) : 0, A.charging, Math.min(1, 0.35 + 0.13 * A.drive));
+  if (A.charging > 6 && A.phase === 'run') game.shake = Math.max(game.shake, Math.min(0.22, A.charging * 0.008));
 }
 
 // ---------------------------------------------------------------- comic finish panel + arena HUD
@@ -5579,19 +5891,21 @@ const ladEl = $('#ladder'), ladName = $('#ladName'), ladNext = $('#ladNext'), la
 const lastLad = { tier: -1, pct: -1, next: '', streak: '' };
 function arenaHud() {
   const cfg = A.cfg;
-  let t = 0; for (let i = 0; i < cfg.tiers.length; i++) if (A.drivePts >= cfg.tierAt[i]) t = i;
+  const intro = A.phase === 'intro';
+  if (intro !== lastLad.intro) { ladEl.style.opacity = intro ? '0' : ''; lastLad.intro = intro; }
+  let t = 0; for (let i = 0; i < cfg.tiers.length; i++) if (A.drivePts >= tierAt(i)) t = i;
   if (A.phase === 'finish') t = A.tier;
   const top = t >= cfg.tiers.length - 1;
-  const pct = top ? 100 : Math.round(clamp((A.drivePts - cfg.tierAt[t]) / (cfg.tierAt[t + 1] - cfg.tierAt[t]), 0, 1) * 100);
+  const pct = top ? 100 : Math.round(clamp((A.drivePts - tierAt(t)) / (tierAt(t + 1) - tierAt(t)), 0, 1) * 100);
   if (t !== lastLad.tier) {
     ladName.textContent = cfg.tiers[t].replace('!', ''); ladEl.dataset.tier = t;
     if (lastLad.tier >= 0 && t > lastLad.tier && game.state === 'play' && A.phase === 'run') { ladEl.classList.remove('up'); void ladEl.offsetWidth; ladEl.classList.add('up'); Sound.stunt(); }
     lastLad.tier = t;
   }
   if (pct !== lastLad.pct) { ladFill.style.width = pct + '%'; lastLad.pct = pct; }
-  const nx = top ? 'MAXED OUT' : 'Next ' + cfg.tiers[t + 1].replace('!', '') + ' at ' + fmt(cfg.tierAt[t + 1]);
+  const nx = top ? 'MAXED OUT' : 'Next ' + cfg.tiers[t + 1].replace('!', '') + ' at ' + fmt(tierAt(t + 1));
   if (nx !== lastLad.next) { ladNext.textContent = nx; lastLad.next = nx; }
-  const sm = streakMult(), st = (A.streak > 0 ? 'Streak ' + A.streak + ' \u00b7 x' + sm.toFixed(1).replace('.0', '') : 'Drive ' + A.drive) + ' \u00b7 1 vs ' + (A.driveCount || 0);
+  const sm = streakMult(), st = (A.streak > 0 ? 'Streak x' + sm.toFixed(2).replace(/\.?0+$/, '') + ' \u00b7 ' : '') + '1 vs ' + fmt(A.driveCount || 0) + ' \u00b7 ' + (A.driveDown || 0) + ' down';
   if (st !== lastLad.streak) { ladStreak.textContent = st; ladStreak.classList.toggle('hot', A.streak > 1); lastLad.streak = st; }
 }
 
@@ -5601,12 +5915,12 @@ function campRelocate(d) {   // a quick cut to another part of the floor, like t
 }
 function campSetup() {
   const d = campDrill(); if (!d || !A.W) return;
-  for (const f of A.defs) { f.a.inUse = false; f.a.root.visible = false; }
+  for (const f of A.defs) freeDef(f);
   for (const k of A.picks) if (k.mesh) A.W.scene.remove(k.mesh);
   A.defs = []; A.picks = []; A.slots = [];
   const L = A.cfg.L;
   if (d.setup === 'rim') {
-    A.drivePts = Math.max(A.drivePts, A.cfg.tierAt[2]);
+    A.drivePts = Math.max(A.drivePts, tierAt(2));
     campRelocate(L - A.cfg.finishAt - 38);
     return;
   }
@@ -5761,6 +6075,7 @@ window.__swerve = { game, player, env, A, setMode, arenaAction, doAction, get mo
   perf: { max: 0, sum: 0, n: 0 },
   cine, campEvent, get camp() { return game.camp; },
   get menus() { return { DUNKS, LAYUP, TD_ENTRIES, TD_CELEBS }; },
+  startDrive() { startDrive(); }, endIntro() { endIntro(); },
   step(dt, n) { for (let i = 0; i < n; i++) { const t0 = performance.now(); const d = timeFlow(dt); game.time += d; update(d, dt); const el = performance.now() - t0; const pf = window.__swerve.perf; pf.max = Math.max(pf.max, el); pf.sum += el; pf.n++; } } };
 requestAnimationFrame((t) => { last = t; frame(t); });
 })();
