@@ -14,8 +14,10 @@ const MODES = ['car', 'hoops', 'football'];
 const PERIODS = ['day', 'week', 'all'];
 const KEEP = 100;                 // entries stored per board
 const SHOW = 50;                  // entries returned per board
-const MAX_SCORE = 100_000_000;
-const MAX_RATE = 60_000;          // points per second of play: anything faster than this isn't a real run
+const MAX_SCORE = 5_000_000;
+const MAX_RATE = 2_000;           // points per second of play: strong runs score a few hundred, so faster than this isn't real
+// Bump when scoring changes so old and new scores never share a board. Older seasons stay in the store, untouched.
+const SEASON = 's2';
 const TZ = process.env.LEADERBOARD_TZ || 'America/Los_Angeles';   // when "today" and "this week" roll over
 
 const BLOCK = ['FUCK', 'SHIT', 'CUNT', 'NIGG', 'FAG', 'BITCH', 'DICK', 'PUSSY', 'SLUT', 'WHORE', 'RAPE', 'NAZI', 'KKK', 'ASSHOLE', 'COCK', 'RETARD'];
@@ -32,6 +34,9 @@ function parts(now) {
   return o;
 }
 function boardKey(mode, period, now) {
+  return SEASON + '/' + periodKey(mode, period, now);
+}
+function periodKey(mode, period, now) {
   if (period === 'all') return 'all/' + mode;
   const p = parts(now);
   const day = Date.UTC(+p.year, +p.month - 1, +p.day);

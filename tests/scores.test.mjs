@@ -33,7 +33,7 @@ assert.equal(j.entries.length, 2); assert.deepEqual(j.entries.map((e) => e.s), [
 // the day rolls over at midnight Pacific (08:00 UTC), the week keeps going
 j = await (await get('mode=hoops&period=day', T('2026-11-05T09:00:00Z'))).json(); assert.equal(j.entries.length, 0);
 j = await (await get('mode=hoops&period=week', T('2026-11-05T09:00:00Z'))).json(); assert.equal(j.entries.length, 2);
-assert.equal(j.key, 'week/hoops/2026-11-02');
+assert.equal(j.key, 's2/week/hoops/2026-11-02');
 // ...and the week rolls over on Monday
 j = await (await get('mode=hoops&period=week', T('2026-11-10T09:00:00Z'))).json(); assert.equal(j.entries.length, 0);
 j = await (await get('mode=hoops&period=all', T('2026-11-10T09:00:00Z'))).json(); assert.equal(j.entries.length, 2);
@@ -43,7 +43,8 @@ j = await (await get('mode=football&period=all', T('2026-11-10T09:00:00Z'))).jso
 assert.equal((await post({ mode: 'golf', score: 5, pid: pid(3), dur: 60 })).status, 400);
 assert.equal((await post({ mode: 'car', score: -5, pid: pid(3), dur: 60 })).status, 400);
 assert.equal((await post({ mode: 'car', score: 5000, pid: 'x', dur: 60 })).status, 400);
-assert.equal((await post({ mode: 'car', score: 9e7, pid: pid(3), dur: 10 })).status, 422);
+assert.equal((await post({ mode: 'car', score: 9e6, pid: pid(3), dur: 6000 })).status, 400);   // over the cap
+assert.equal((await post({ mode: 'car', score: 50000, pid: pid(3), dur: 10 })).status, 422);  // too fast to be real
 assert.equal((await handle(new Request('http://x/api/scores', { method: 'POST', body: 'nope' }), { store })).status, 400);
 assert.equal((await get('mode=car&period=year')).status, 400);
 // names are cleaned up and filtered

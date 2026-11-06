@@ -32,7 +32,9 @@ There's nothing to set up for storage: Netlify Blobs is built in, and the functi
 ## How the boards work
 
 - One board per planet per period, stored as a small JSON list in the Blobs store `swerve-scores`
-  (`day/hoops/2026-11-04`, `week/hoops/2026-11-02`, `all/hoops`, …). Each keeps the top 100 and shows the top 50.
+  (`s2/day/hoops/2026-11-04`, `s2/week/hoops/2026-11-02`, `s2/all/hoops`, …). Each keeps the top 100 and shows the top 50.
+- `s2` is the season. When scoring changes, bump `SEASON` in `netlify/functions/scores.mjs` and every board starts
+  fresh; older seasons stay in the store.
 - **Today** rolls over at midnight and **this week** on Monday at midnight, Pacific time. To use another time zone,
   set the environment variable `LEADERBOARD_TZ` (for example `America/New_York`) in the Netlify project settings.
 - One row per player: your best score stands, and a worse run doesn't replace it. Players are told apart by a random
@@ -41,8 +43,8 @@ There's nothing to set up for storage: Netlify Blobs is built in, and the functi
 - Names are up to 12 characters (letters, numbers, `space . _ ! -`), uppercased, with a basic word filter.
 - A per-visitor rate limit (40 requests a minute) is set in the function's `config`.
 
-**About cheating:** any browser game's scores can be faked by someone determined. The API rejects scores that are
-impossible for the length of the run, which stops casual tampering. To wipe a board, delete its entry in
+**About cheating:** any browser game's scores can be faked by someone determined. The API rejects scores over 5,000,000 or
+faster than 2,000 points per second of play, which stops casual tampering. To wipe a board, delete its entry in
 *Netlify → your project → Blobs → swerve-scores*.
 
 ## API
